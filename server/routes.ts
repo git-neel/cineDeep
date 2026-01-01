@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import type { Server } from "http";
 import OpenAI from "openai";
+import pLimit from "p-limit";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -9,6 +10,12 @@ const openai = new OpenAI({
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
+
+// Simple in-memory cache for insights
+const insightsCache = new Map<string, any[]>();
+
+// Limit concurrent TMDB requests
+const limit = pLimit(5);
 
 interface TMDBSearchResult {
   id: number;
@@ -46,6 +53,106 @@ interface TMDBMovieDetails {
       job: string;
     }>;
   };
+}
+
+interface TMDBPersonCredits {
+  cast: Array<{
+    id: number;
+    title?: string;
+    name?: string;
+    release_date?: string;
+    first_air_date?: string;
+    media_type: string;
+  }>;
+}
+
+async function fetchActorProjects(actorId: number): Promise<string[]> {
+  try {
+    const credits: TMDBPersonCredits = await fetchFromTMDB(`/person/${actorId}/combined_credits`);
+    const now = new Date();
+    const recentProjects = credits.cast
+      .filter((item) => {
+        const dateStr = item.release_date || item.first_air_date;
+        if (!dateStr) return true; // Include items without dates (upcoming)
+        const date = new Date(dateStr);
+        return date >= new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.release_date || a.first_air_date || '9999');
+        const dateB = new Date(b.release_date || b.first_air_date || '9999');
+        return dateB.getTime() - dateA.getTime();
+      })
+      .slice(0, 3)
+      .map((item) => item.title || item.name || 'Untitled');
+    return recentProjects;
+  } catch {
+    return [];
+  }
+}
+
+async function generateInsightsForTitle(title: string, synopsis: string): Promise<any[]> {
+  const cacheKey = `${title}`.toLowerCase();
+  if (insightsCache.has(cacheKey)) {
+    return insightsCache.get(cacheKey)!;
+  }
+
+  try {
+    const prompt = `You are a film critic and cultural analyst. Analyze "${title}" and provide deep insights.
+
+Return a JSON object with an "insights" array containing 4 insights with this exact structure:
+{
+  "insights": [
+    {
+      "type": "dialogue",
+      "title": "A memorable quote from the movie",
+      "description": "2-3 sentences explaining its deeper meaning or significance"
+    },
+    {
+      "type": "metaphor",
+      "title": "A visual or thematic metaphor",
+      "description": "2-3 sentences explaining the symbolic meaning"
+    },
+    {
+      "type": "easter-egg",
+      "title": "A hidden detail or Easter egg",
+      "description": "2-3 sentences explaining this hidden element"
+    },
+    {
+      "type": "metaphor",
+      "title": "Another symbolic element",
+      "description": "2-3 sentences about its cultural or philosophical significance"
+    }
+  ]
+}
+
+${synopsis ? `Synopsis: ${synopsis}` : ''}
+
+Return ONLY valid JSON.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 1000,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return [];
+
+    const parsed = JSON.parse(content);
+    const insights = (Array.isArray(parsed) ? parsed : parsed.insights || []).map((insight: any, idx: number) => ({
+      id: `ai-${idx}`,
+      type: insight.type || 'metaphor',
+      title: insight.title || 'Insight',
+      description: insight.description || '',
+    }));
+
+    insightsCache.set(cacheKey, insights);
+    return insights;
+  } catch (error) {
+    console.error("AI insights error:", error);
+    return [];
+  }
 }
 
 async function fetchFromTMDB(endpoint: string) {
@@ -108,7 +215,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get movie/show details
+  // Get movie/show details with actor projects and AI insights
   app.get("/api/title/:type/:id", async (req: Request, res: Response) => {
     try {
       const { type, id } = req.params;
@@ -119,19 +226,37 @@ export async function registerRoutes(
       const director = details.credits.crew.find((c) => c.job === 'Director') || 
                        details.credits.crew.find((c) => c.job === 'Executive Producer');
       
-      const cast = details.credits.cast.slice(0, 5).map((actor) => ({
-        id: actor.id.toString(),
-        name: actor.name,
-        role: actor.character,
-        imageUrl: getImageUrl(actor.profile_path),
-      }));
+      const topCast = details.credits.cast.slice(0, 5);
+      
+      // Fetch actor projects in parallel with rate limiting
+      const castWithProjects = await Promise.all(
+        topCast.map((actor) => 
+          limit(async () => {
+            const currentProjects = await fetchActorProjects(actor.id);
+            return {
+              id: actor.id.toString(),
+              name: actor.name,
+              role: actor.character,
+              imageUrl: getImageUrl(actor.profile_path),
+              fee: 'Undisclosed',
+              currentProjects,
+            };
+          })
+        )
+      );
 
       const budget = details.budget || 0;
       const revenue = details.revenue || 0;
+      const titleName = details.title || details.name || '';
+      
+      // Generate AI insights in parallel
+      const insightsPromise = generateInsightsForTitle(titleName, details.overview);
+
+      const insights = await insightsPromise;
 
       const result = {
         id: details.id.toString(),
-        title: details.title || details.name,
+        title: titleName,
         type: type === 'movie' ? 'Movie' : 'Show',
         year: (details.release_date || details.first_air_date || '').split('-')[0],
         synopsis: details.overview,
@@ -139,13 +264,15 @@ export async function registerRoutes(
         backdropUrl: getImageUrl(details.backdrop_path, 'original'),
         director: {
           name: director?.name || 'Unknown',
+          fee: 'Undisclosed',
         },
-        cast,
+        cast: castWithProjects,
         budget: {
           production: budget > 0 ? `$${(budget / 1_000_000).toFixed(1)}M` : 'N/A',
           boxOffice: revenue > 0 ? `$${(revenue / 1_000_000).toFixed(1)}M` : 'N/A',
           verdict: determineVerdict(budget, revenue),
         },
+        deepDive: insights,
       };
 
       res.json(result);
