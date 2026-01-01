@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import type { Server } from "http";
 import OpenAI from "openai";
-import pLimit from "p-limit";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -13,9 +12,6 @@ const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 
 // Simple in-memory cache for insights
 const insightsCache = new Map<string, any[]>();
-
-// Limit concurrent TMDB requests
-const limit = pLimit(5);
 
 interface TMDBSearchResult {
   id: number;
@@ -228,21 +224,19 @@ export async function registerRoutes(
       
       const topCast = details.credits.cast.slice(0, 5);
       
-      // Fetch actor projects in parallel with rate limiting
+      // Fetch actor projects in parallel
       const castWithProjects = await Promise.all(
-        topCast.map((actor) => 
-          limit(async () => {
-            const currentProjects = await fetchActorProjects(actor.id);
-            return {
-              id: actor.id.toString(),
-              name: actor.name,
-              role: actor.character,
-              imageUrl: getImageUrl(actor.profile_path),
-              fee: 'Undisclosed',
-              currentProjects,
-            };
-          })
-        )
+        topCast.map(async (actor) => {
+          const currentProjects = await fetchActorProjects(actor.id);
+          return {
+            id: actor.id.toString(),
+            name: actor.name,
+            role: actor.character,
+            imageUrl: getImageUrl(actor.profile_path),
+            fee: 'Undisclosed',
+            currentProjects,
+          };
+        })
       );
 
       const budget = details.budget || 0;
