@@ -4,16 +4,21 @@ import { getMovieDetails, type MovieDetail } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { ArrowLeft, DollarSign, Film, Sparkles, MessageSquare, Quote, Clapperboard, Loader2 } from "lucide-react";
+import { ArrowLeft, DollarSign, Film, Sparkles, MessageSquare, Quote, Clapperboard, Loader2, User, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
+import { useAuth } from "@/hooks/useAuth";
+import { LoginModal } from "@/components/LoginModal";
+import { DiscussionSection } from "@/components/Discussion";
 
 export default function MovieDetailPage() {
   const [match, params] = useRoute("/title/:type/:id");
   const [, setLocation] = useLocation();
   const { type, id } = params || {};
   
+  const { user, isAuthenticated, logout } = useAuth();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
     if (type && id) {
@@ -79,15 +84,42 @@ export default function MovieDetailPage() {
           <div className="absolute inset-0 bg-black/40" />
         </div>
 
-        <div className="absolute top-0 left-0 w-full p-6 z-10">
+        <div className="absolute top-0 left-0 w-full p-6 z-10 flex justify-between items-center">
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={() => setLocation("/")}
             className="rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md text-white border border-white/10"
+            data-testid="button-back"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
+          
+          {isAuthenticated ? (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-black/20 backdrop-blur-md px-3 py-2 rounded-full border border-white/10">
+                <User size={16} className="text-amber-500" />
+                <span className="text-white text-sm font-medium">{user?.displayName}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => logout()}
+                className="rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md text-white border border-white/10"
+                data-testid="button-logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              onClick={() => setShowLoginModal(true)}
+              className="bg-amber-500 hover:bg-amber-600 text-black font-medium rounded-full px-4"
+              data-testid="button-signin"
+            >
+              Sign In
+            </Button>
+          )}
         </div>
 
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-12 z-10">
@@ -253,7 +285,17 @@ export default function MovieDetailPage() {
             </div>
           )}
         </section>
+
+        {/* Discussions Section */}
+        <DiscussionSection
+          tmdbId={parseInt(id!)}
+          mediaType={type === 'movie' ? 'movie' : 'tv'}
+          movieTitle={movie.title}
+          onLoginRequired={() => setShowLoginModal(true)}
+        />
       </main>
+
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </div>
   );
 }
