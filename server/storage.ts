@@ -34,6 +34,7 @@ export interface IStorage {
   
   // Posts
   getPostsForTopic(topicId: string): Promise<(DiscussionPost & { authorName: string; voteCount: number })[]>;
+  getPostById(postId: string): Promise<DiscussionPost | undefined>;
   createPost(post: InsertPost): Promise<DiscussionPost>;
   
   // Votes
@@ -209,6 +210,11 @@ export class DatabaseStorage implements IStorage {
       ...p,
       authorName: p.authorName || 'Unknown',
     }));
+  }
+
+  async getPostById(postId: string): Promise<DiscussionPost | undefined> {
+    const [post] = await db.select().from(discussionPosts).where(eq(discussionPosts.id, postId));
+    return post;
   }
 
   async createPost(post: InsertPost): Promise<DiscussionPost> {

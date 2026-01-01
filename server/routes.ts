@@ -477,12 +477,21 @@ Return ONLY valid JSON, no other text.`;
       // Find or create user
       let user = await storage.getUserByEmail(result.email);
       if (!user) {
-        if (!displayName || displayName.trim().length < 2) {
-          return res.status(400).json({ error: "Display name is required for new users", needsDisplayName: true });
+        // Validate display name for new users
+        if (!displayName || typeof displayName !== 'string' || displayName.trim().length < 2) {
+          return res.status(400).json({ 
+            error: "Display name is required for new users", 
+            needsDisplayName: true,
+            email: result.email 
+          });
+        }
+        const trimmedName = displayName.trim();
+        if (trimmedName.length > 50) {
+          return res.status(400).json({ error: "Display name must be 50 characters or less" });
         }
         user = await storage.createUser({
           email: result.email,
-          displayName: displayName.trim(),
+          displayName: trimmedName,
         });
       }
       
@@ -661,6 +670,13 @@ Return ONLY valid JSON, no other text.`;
   app.post("/api/posts/:postId/vote", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { postId } = req.params;
+      
+      // Verify post exists
+      const postExists = await storage.getPostById(postId);
+      if (!postExists) {
+        return res.status(404).json({ error: "Post not found" });
+      }
+      
       const result = await storage.toggleVote(postId, req.userId!);
       res.json(result);
     } catch (error) {

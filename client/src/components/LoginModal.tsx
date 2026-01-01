@@ -48,14 +48,15 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setError('');
     
     try {
-      const response = await verifyToken(token, isNewUser ? displayName : undefined);
+      // For new users, first attempt without displayName to check if account exists
+      const response = await verifyToken(token);
       login(response.sessionId, response.user);
       setStep('success');
       setTimeout(() => {
         handleClose();
       }, 1500);
     } catch (err: any) {
-      if (err.message?.includes('Display name is required')) {
+      if (err.message?.includes('Display name is required') || err.message?.includes('needsDisplayName')) {
         setStep('display-name');
         setError('');
       } else {
