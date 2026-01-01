@@ -469,7 +469,8 @@ Return ONLY valid JSON, no other text.`;
         return res.status(400).json({ error: "Token is required" });
       }
       
-      const result = await storage.verifyAuthToken(token);
+      // First, validate the token without consuming it
+      const result = await storage.verifyAuthToken(token, false);
       if (!result) {
         return res.status(400).json({ error: "Invalid or expired token" });
       }
@@ -479,6 +480,7 @@ Return ONLY valid JSON, no other text.`;
       if (!user) {
         // Validate display name for new users
         if (!displayName || typeof displayName !== 'string' || displayName.trim().length < 2) {
+          // Don't consume token yet - user needs to provide display name
           return res.status(400).json({ 
             error: "Display name is required for new users", 
             needsDisplayName: true,
@@ -494,6 +496,9 @@ Return ONLY valid JSON, no other text.`;
           displayName: trimmedName,
         });
       }
+      
+      // Now consume the token since login is successful
+      await storage.consumeAuthToken(result.tokenId);
       
       // Create session
       const sessionId = await storage.createSession(user.id);

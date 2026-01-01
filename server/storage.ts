@@ -17,7 +17,8 @@ export interface IStorage {
   
   // Auth tokens
   createAuthToken(email: string, userId: string | null): Promise<{ token: string; expiresAt: Date }>;
-  verifyAuthToken(token: string): Promise<{ email: string; userId: string | null } | null>;
+  verifyAuthToken(token: string, consume?: boolean): Promise<{ email: string; userId: string | null; tokenId: string } | null>;
+  consumeAuthToken(tokenId: string): Promise<void>;
   
   // Sessions
   createSession(userId: string): Promise<string>;
@@ -86,7 +87,7 @@ export class DatabaseStorage implements IStorage {
     return { token, expiresAt };
   }
 
-  async verifyAuthToken(token: string): Promise<{ email: string; userId: string | null } | null> {
+  async verifyAuthToken(token: string, consume: boolean = true): Promise<{ email: string; userId: string | null; tokenId: string } | null> {
     const tokenHash = hashToken(token);
     const [authToken] = await db.select()
       .from(authTokens)
@@ -100,12 +101,20 @@ export class DatabaseStorage implements IStorage {
     
     if (!authToken) return null;
     
-    // Mark as consumed
+    // Only consume token if requested
+    if (consume) {
+      await db.update(authTokens)
+        .set({ consumedAt: new Date() })
+        .where(eq(authTokens.id, authToken.id));
+    }
+    
+    return { email: authToken.destinationEmail, userId: authToken.userId, tokenId: authToken.id };
+  }
+
+  async consumeAuthToken(tokenId: string): Promise<void> {
     await db.update(authTokens)
       .set({ consumedAt: new Date() })
-      .where(eq(authTokens.id, authToken.id));
-    
-    return { email: authToken.destinationEmail, userId: authToken.userId };
+      .where(eq(authTokens.id, tokenId));
   }
 
   // Sessions
