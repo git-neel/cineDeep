@@ -184,6 +184,128 @@ export const mockMovies: Movie[] = [
         description: 'Brand’s monologue is the thematic core of the film. It argues that love isn’t just a biological drive but a tangible force in the universe, as real as gravity.'
       }
     ]
+  },
+  {
+    id: '4',
+    title: 'Breaking Bad',
+    type: 'Show',
+    year: '2008-2013',
+    synopsis: 'A high school chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine in order to secure his family\'s future.',
+    posterUrl: 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=1000&auto=format&fit=crop', // Placeholder
+    backdropUrl: 'https://images.unsplash.com/photo-1532517308734-0565178471d2?q=80&w=2000&auto=format&fit=crop',
+    director: {
+      name: 'Vince Gilligan (Creator)',
+      fee: '$5M/Season',
+      currentProjects: ['Untitled Apple TV+ Series']
+    },
+    cast: [
+      {
+        id: 'c8',
+        name: 'Bryan Cranston',
+        role: 'Walter White',
+        fee: '$225k/episode (Final Season)',
+        currentProjects: ['Argylle', 'Kung Fu Panda 4']
+      },
+      {
+        id: 'c9',
+        name: 'Aaron Paul',
+        role: 'Jesse Pinkman',
+        fee: '$150k/episode (Final Season)',
+        currentProjects: ['Black Mirror', 'Ash']
+      }
+    ],
+    budget: {
+      production: '$3M / Episode',
+      boxOffice: 'N/A (TV)',
+      verdict: 'Super Hit'
+    },
+    deepDive: [
+      {
+        id: 'd6',
+        type: 'metaphor',
+        title: 'Colors',
+        description: 'Vince Gilligan used color theory extensively. Walter wears beige/green (neutral) at the start, shifts to black/darker colors as Heisenberg, and returns to beige at the very end.'
+      }
+    ]
+  },
+  {
+    id: '5',
+    title: 'The Dark Knight',
+    type: 'Movie',
+    year: '2008',
+    synopsis: 'When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice.',
+    posterUrl: 'https://images.unsplash.com/photo-1509347528160-9a9e33742cd4?q=80&w=1000&auto=format&fit=crop', // Dark city
+    backdropUrl: 'https://images.unsplash.com/photo-1478720568477-152d9b164e63?q=80&w=2000&auto=format&fit=crop',
+    director: {
+      name: 'Christopher Nolan',
+      fee: '$20M + Gross',
+      currentProjects: ['Oppenheimer (Completed)']
+    },
+    cast: [
+      {
+        id: 'c10',
+        name: 'Christian Bale',
+        role: 'Bruce Wayne / Batman',
+        fee: '$30M + Points',
+        currentProjects: ['The Bride']
+      },
+      {
+        id: 'c11',
+        name: 'Heath Ledger',
+        role: 'The Joker',
+        fee: '$20M (Estate)',
+        currentProjects: ['N/A']
+      }
+    ],
+    budget: {
+      production: '$185,000,000',
+      boxOffice: '$1,006,234,167',
+      verdict: 'Blockbuster'
+    },
+    deepDive: [
+      {
+        id: 'd7',
+        type: 'dialogue',
+        title: '"You either die a hero, or you live long enough to see yourself become the villain."',
+        description: 'The central thesis of the film, foreshadowing Harvey Dent’s fall and Batman’s necessary sacrifice of his reputation.'
+      }
+    ]
+  },
+  {
+    id: '6',
+    title: 'Parasite',
+    type: 'Movie',
+    year: '2019',
+    synopsis: 'Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.',
+    posterUrl: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=1000&auto=format&fit=crop', // House/Architecture
+    backdropUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=2000&auto=format&fit=crop',
+    director: {
+      name: 'Bong Joon Ho',
+      fee: 'Undisclosed',
+      currentProjects: ['Mickey 17']
+    },
+    cast: [
+      {
+        id: 'c12',
+        name: 'Song Kang-ho',
+        role: 'Kim Ki-taek',
+        fee: '$800k (Estimated)',
+        currentProjects: ['Uncle Samsik']
+      }
+    ],
+    budget: {
+      production: '$11,400,000',
+      boxOffice: '$263,136,741',
+      verdict: 'Super Hit'
+    },
+    deepDive: [
+      {
+        id: 'd8',
+        type: 'metaphor',
+        title: 'The Smell',
+        description: 'The recurring motif of "smell" represents class distinction that cannot be washed away, ultimately driving the climax of the film.'
+      }
+    ]
   }
 ];
 
