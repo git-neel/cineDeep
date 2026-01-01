@@ -1,17 +1,61 @@
 import { useRoute, useLocation } from "wouter";
-import { getMovieById } from "@/lib/mockData";
+import { useEffect, useState } from "react";
+import { getMovieDetails, generateInsights, type MovieDetail, type HiddenDetail } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { ArrowLeft, DollarSign, Film, Sparkles, MessageSquare, Quote, Clapperboard } from "lucide-react";
+import { ArrowLeft, DollarSign, Film, Sparkles, MessageSquare, Quote, Clapperboard, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function MovieDetail() {
-  const [match, params] = useRoute("/title/:id");
+  const [match, params] = useRoute("/title/:type/:id");
   const [, setLocation] = useLocation();
-  const id = params?.id;
-  const movie = id ? getMovieById(id) : undefined;
+  const { type, id } = params || {};
+  
+  const [movie, setMovie] = useState<MovieDetail | null>(null);
+  const [insights, setInsights] = useState<HiddenDetail[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
+  useEffect(() => {
+    if (type && id) {
+      setLoading(true);
+      getMovieDetails(type, id)
+        .then((data) => {
+          setMovie(data);
+          setLoading(false);
+        })
+        .catch((error) => {
+          console.error("Failed to load movie:", error);
+          setLoading(false);
+        });
+    }
+  }, [type, id]);
+
+  const handleGenerateInsights = async () => {
+    if (!movie || !type || !id) return;
+    
+    setInsightsLoading(true);
+    try {
+      const generated = await generateInsights(type, id, movie.title, movie.synopsis);
+      setInsights(generated);
+    } catch (error) {
+      console.error("Failed to generate insights:", error);
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground">Loading movie details...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!movie) {
     return (
@@ -137,43 +181,30 @@ export default function MovieDetail() {
                 <span className="text-sm font-medium uppercase tracking-wider">Director</span>
               </div>
               <p className="text-xl font-display font-bold text-foreground">{movie.director.name}</p>
-              <div className="flex justify-between items-end mt-2">
-                <span className="text-sm text-muted-foreground">Fee: {movie.director.fee}</span>
-              </div>
             </div>
           </div>
         </section>
 
-        {/* Cast & Crew */}
+        {/* Cast */}
         <section>
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-3xl font-display font-bold">Cast & Salaries</h2>
+            <h2 className="text-3xl font-display font-bold">Cast</h2>
           </div>
           <ScrollArea className="w-full whitespace-nowrap pb-4">
             <div className="flex gap-6">
               {movie.cast.map((actor) => (
-                <div key={actor.id} className="w-[280px] p-6 rounded-2xl bg-card border border-white/5 shrink-0 hover:bg-white/5 transition-colors">
+                <div key={actor.id} className="w-[240px] p-6 rounded-2xl bg-card border border-white/5 shrink-0 hover:bg-white/5 transition-colors">
                   <div className="flex justify-between items-start mb-4">
-                    <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-xl font-bold font-display">
-                      {actor.name.charAt(0)}
-                    </div>
-                    <Badge variant="secondary" className="bg-white/5 hover:bg-white/10">
-                      {actor.fee}
-                    </Badge>
+                    {actor.imageUrl && actor.imageUrl.includes('image.tmdb.org') ? (
+                      <img src={actor.imageUrl} alt={actor.name} className="w-16 h-16 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold font-display">
+                        {actor.name.charAt(0)}
+                      </div>
+                    )}
                   </div>
-                  <h3 className="text-xl font-bold mb-1 truncate">{actor.name}</h3>
-                  <p className="text-muted-foreground text-sm mb-4 truncate">as {actor.role}</p>
-                  
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Current Projects</p>
-                    <div className="flex flex-wrap gap-2">
-                      {actor.currentProjects.map((project, i) => (
-                        <span key={i} className="text-xs px-2 py-1 rounded-md bg-white/5 border border-white/5">
-                          {project}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <h3 className="text-xl font-bold mb-1">{actor.name}</h3>
+                  <p className="text-muted-foreground text-sm">as {actor.role}</p>
                 </div>
               ))}
             </div>
@@ -184,29 +215,63 @@ export default function MovieDetail() {
         {/* Deep Dive / Hidden Meanings */}
         <section className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5 rounded-3xl -z-10 blur-3xl" />
-          <div className="flex items-center gap-3 mb-8">
-            <Sparkles className="w-6 h-6 text-yellow-400" />
-            <h2 className="text-3xl font-display font-bold">Deep Dive & Hidden Meanings</h2>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-6 h-6 text-yellow-400" />
+              <h2 className="text-3xl font-display font-bold">AI-Powered Deep Dive</h2>
+            </div>
+            {insights.length === 0 && (
+              <Button 
+                onClick={handleGenerateInsights} 
+                disabled={insightsLoading}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                data-testid="button-generate-insights"
+              >
+                {insightsLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate Insights
+                  </>
+                )}
+              </Button>
+            )}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            {movie.deepDive.map((item) => (
-              <div key={item.id} className="group p-8 rounded-2xl bg-card border border-white/5 hover:border-white/20 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-4">
-                  {item.type === 'dialogue' && <Quote className="w-5 h-5 text-blue-400" />}
-                  {item.type === 'metaphor' && <MessageSquare className="w-5 h-5 text-purple-400" />}
-                  {item.type === 'easter-egg' && <Sparkles className="w-5 h-5 text-yellow-400" />}
-                  <span className="text-sm font-medium uppercase tracking-wider text-muted-foreground">{item.type}</span>
+          {insights.length > 0 ? (
+            <div className="grid md:grid-cols-2 gap-6">
+              {insights.map((item) => (
+                <div key={item.id} className="group p-8 rounded-2xl bg-card border border-white/5 hover:border-white/20 transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    {item.type === 'dialogue' && <Quote className="w-5 h-5 text-blue-400" />}
+                    {item.type === 'metaphor' && <MessageSquare className="w-5 h-5 text-purple-400" />}
+                    {item.type === 'easter-egg' && <Sparkles className="w-5 h-5 text-yellow-400" />}
+                    <span className="text-sm font-medium uppercase tracking-wider text-muted-foreground">{item.type}</span>
+                  </div>
+                  <h3 className="text-xl font-bold mb-3 group-hover:text-primary transition-colors">
+                    {item.title}
+                  </h3>
+                  <p className="text-muted-foreground leading-relaxed">
+                    {item.description}
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold mb-3 group-hover:text-primary transition-colors">
-                  {item.title}
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  {item.description}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : !insightsLoading && (
+            <div className="text-center py-12 px-6 border border-dashed border-white/10 rounded-2xl">
+              <Sparkles className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+              <p className="text-lg text-muted-foreground mb-2">
+                Unlock hidden meanings and Easter eggs with AI analysis
+              </p>
+              <p className="text-sm text-muted-foreground/60">
+                Click "Generate Insights" to discover dialogue symbolism, metaphors, and cultural subtext
+              </p>
+            </div>
+          )}
         </section>
       </main>
     </div>

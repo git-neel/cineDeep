@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { mockMovies } from "@/lib/mockData";
 import { MovieCard } from "@/components/MovieCard";
 
 export default function Home() {
@@ -17,8 +16,6 @@ export default function Home() {
       setLocation(`/search?q=${encodeURIComponent(query)}`);
     }
   };
-
-  const featuredMovies = mockMovies.slice(0, 3);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -69,22 +66,10 @@ export default function Home() {
             </div>
           </form>
 
-          <div className="pt-20 text-left w-full">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-display font-semibold">Trending Insights</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {featuredMovies.map((movie, idx) => (
-                <motion.div
-                  key={movie.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 + (idx * 0.1) }}
-                >
-                  <MovieCard movie={movie} />
-                </motion.div>
-              ))}
-            </div>
+          <div className="pt-20 text-center w-full max-w-lg">
+            <p className="text-sm text-muted-foreground">
+              Try searching for "Inception", "Breaking Bad", "The Dark Knight", or any movie or show you love
+            </p>
           </div>
         </motion.div>
       </main>

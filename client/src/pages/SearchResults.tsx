@@ -1,9 +1,9 @@
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { searchContent, Movie } from "@/lib/mockData";
+import { searchMovies, Movie } from "@/lib/api";
 import { MovieCard } from "@/components/MovieCard";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Search } from "lucide-react";
+import { ArrowLeft, Search, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export default function SearchResults() {
@@ -13,10 +13,18 @@ export default function SearchResults() {
   
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (query) {
-      setResults(searchContent(query));
+      setLoading(true);
+      searchMovies(query)
+        .then(setResults)
+        .catch((error) => {
+          console.error("Search failed:", error);
+          setResults([]);
+        })
+        .finally(() => setLoading(false));
     }
   }, [query]);
 
@@ -58,16 +66,23 @@ export default function SearchResults() {
       </header>
 
       <main className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h2 className="text-xl text-muted-foreground">
-            {results.length > 0 
-              ? `Found ${results.length} result${results.length === 1 ? '' : 's'} for "${query}"`
-              : `No results found for "${query}"`
-            }
-          </h2>
-        </div>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+            <p className="text-muted-foreground">Searching the depths of cinema...</p>
+          </div>
+        ) : (
+          <>
+            <div className="mb-8">
+              <h2 className="text-xl text-muted-foreground">
+                {results.length > 0 
+                  ? `Found ${results.length} result${results.length === 1 ? '' : 's'} for "${query}"`
+                  : `No results found for "${query}"`
+                }
+              </h2>
+            </div>
 
-        {results.length > 0 ? (
+            {results.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {results.map(movie => (
               <MovieCard key={movie.id} movie={movie} />
@@ -110,6 +125,8 @@ export default function SearchResults() {
               </div>
             </div>
           </div>
+            )}
+          </>
         )}
       </main>
     </div>

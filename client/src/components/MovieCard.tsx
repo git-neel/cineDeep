@@ -1,7 +1,7 @@
 import { Link } from "wouter";
-import { Movie } from "@/lib/mockData";
+import { Movie } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
 interface MovieCardProps {
@@ -9,8 +9,10 @@ interface MovieCardProps {
 }
 
 export function MovieCard({ movie }: MovieCardProps) {
+  const titleSlug = `${movie.type.toLowerCase()}/${movie.id}`;
+  
   return (
-    <Link href={`/title/${movie.id}`}>
+    <Link href={`/title/${titleSlug}`} data-testid={`link-movie-${movie.id}`}>
       <motion.div
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
@@ -35,11 +37,11 @@ export function MovieCard({ movie }: MovieCardProps) {
             </div>
           </div>
           <CardContent className="p-3 pl-0">
-            <h3 className="font-display font-bold text-lg leading-tight text-foreground group-hover:text-primary transition-colors">
+            <h3 className="font-display font-bold text-lg leading-tight text-foreground group-hover:text-primary transition-colors" data-testid={`text-title-${movie.id}`}>
               {movie.title}
             </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              {movie.year} • {movie.director.name}
+            <p className="text-sm text-muted-foreground mt-1" data-testid={`text-year-${movie.id}`}>
+              {movie.year}
             </p>
           </CardContent>
         </Card>
