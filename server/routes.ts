@@ -1,6 +1,8 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import OpenAI from "openai";
+import { storage } from "./storage";
+import { z } from "zod";
 
 // Support both Replit AI Integrations and standard OpenAI API
 const openai = new OpenAI({
@@ -10,6 +12,76 @@ const openai = new OpenAI({
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
+
+// Extend Express Request to include user info
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+      sessionId?: string;
+    }
+  }
+}
+
+// Auth middleware
+async function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  const sessionId = req.headers['x-session-id'] as string;
+  if (!sessionId) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  
+  const session = await storage.getSession(sessionId);
+  if (!session) {
+    return res.status(401).json({ error: "Invalid session" });
+  }
+  
+  req.userId = session.userId;
+  req.sessionId = sessionId;
+  
+  // Update session activity
+  await storage.updateSessionActivity(sessionId);
+  await storage.updateUserLastSeen(session.userId);
+  
+  next();
+}
+
+// Optional auth middleware (doesn't fail, just attaches user if present)
+async function optionalAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  const sessionId = req.headers['x-session-id'] as string;
+  if (sessionId) {
+    const session = await storage.getSession(sessionId);
+    if (session) {
+      req.userId = session.userId;
+      req.sessionId = sessionId;
+      await storage.updateSessionActivity(sessionId);
+      await storage.updateUserLastSeen(session.userId);
+    }
+  }
+  next();
+}
+
+// Validation schemas
+const requestLoginSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(2).max(50).optional(),
+});
+
+const createTopicSchema = z.object({
+  tmdbId: z.number(),
+  mediaType: z.enum(['movie', 'tv']),
+  title: z.string(),
+  prompt: z.string().min(5).max(500),
+});
+
+const createPostSchema = z.object({
+  body: z.string().min(1).max(5000),
+  parentPostId: z.string().optional(),
+});
+
+// Generate 6-digit OTP
+function generateOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
 // Simple in-memory cache for insights
 const insightsCache = new Map<string, any[]>();
@@ -342,6 +414,270 @@ Return ONLY valid JSON, no other text.`;
     } catch (error) {
       console.error("Insights generation error:", error);
       res.status(500).json({ error: "Failed to generate insights" });
+    }
+  });
+
+  // ==================== AUTH ROUTES ====================
+
+  // Request login (send OTP via email - for now we'll show it in response for testing)
+  app.post("/api/auth/request-login", async (req: Request, res: Response) => {
+    try {
+      const parsed = requestLoginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid email address" });
+      }
+
+      const { email, displayName } = parsed.data;
+      
+      // Check if user exists
+      let user = await storage.getUserByEmail(email);
+      let userId: string | null = user?.id || null;
+      
+      // Create auth token
+      const { token, expiresAt } = await storage.createAuthToken(email, userId);
+      
+      // In production, send email with token. For now, we return it for testing.
+      // The token is a 6-digit OTP for easy entry
+      const otp = generateOTP();
+      
+      // Store a mapping of OTP to token (in production, only store OTP hash)
+      const otpToken = await storage.createAuthToken(email, userId);
+      
+      // Log for development
+      console.log(`[AUTH] OTP for ${email}: ${otp} (use token: ${token})`);
+      
+      res.json({
+        message: "Verification code sent",
+        email,
+        // Return token for development/testing - in production, send via email
+        token: token,
+        expiresAt,
+        isNewUser: !user,
+      });
+    } catch (error) {
+      console.error("Auth request error:", error);
+      res.status(500).json({ error: "Failed to send verification" });
+    }
+  });
+
+  // Verify token and create session
+  app.post("/api/auth/verify", async (req: Request, res: Response) => {
+    try {
+      const { token, displayName } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ error: "Token is required" });
+      }
+      
+      const result = await storage.verifyAuthToken(token);
+      if (!result) {
+        return res.status(400).json({ error: "Invalid or expired token" });
+      }
+      
+      // Find or create user
+      let user = await storage.getUserByEmail(result.email);
+      if (!user) {
+        if (!displayName || displayName.trim().length < 2) {
+          return res.status(400).json({ error: "Display name is required for new users", needsDisplayName: true });
+        }
+        user = await storage.createUser({
+          email: result.email,
+          displayName: displayName.trim(),
+        });
+      }
+      
+      // Create session
+      const sessionId = await storage.createSession(user.id);
+      
+      res.json({
+        sessionId,
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+        },
+      });
+    } catch (error) {
+      console.error("Verify error:", error);
+      res.status(500).json({ error: "Failed to verify" });
+    }
+  });
+
+  // Get current user
+  app.get("/api/auth/me", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser(req.userId!);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json({
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+      });
+    } catch (error) {
+      console.error("Get user error:", error);
+      res.status(500).json({ error: "Failed to get user" });
+    }
+  });
+
+  // Logout
+  app.post("/api/auth/logout", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      await storage.revokeSession(req.sessionId!);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Logout error:", error);
+      res.status(500).json({ error: "Failed to logout" });
+    }
+  });
+
+  // ==================== DISCUSSION ROUTES ====================
+
+  // Get topics for a movie
+  app.get("/api/topics", optionalAuthMiddleware, async (req: Request, res: Response) => {
+    try {
+      const tmdbId = parseInt(req.query.tmdbId as string);
+      const mediaType = req.query.mediaType as string || 'movie';
+      
+      if (!tmdbId) {
+        return res.status(400).json({ error: "tmdbId is required" });
+      }
+      
+      const topics = await storage.getTopicsForMovie(tmdbId, mediaType);
+      res.json(topics);
+    } catch (error) {
+      console.error("Get topics error:", error);
+      res.status(500).json({ error: "Failed to get topics" });
+    }
+  });
+
+  // Create a new topic
+  app.post("/api/topics", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const parsed = createTopicSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid topic data", details: parsed.error.issues });
+      }
+      
+      const topic = await storage.createTopic({
+        ...parsed.data,
+        createdBy: req.userId!,
+      });
+      
+      res.json(topic);
+    } catch (error) {
+      console.error("Create topic error:", error);
+      res.status(500).json({ error: "Failed to create topic" });
+    }
+  });
+
+  // Get a single topic with posts
+  app.get("/api/topics/:topicId", optionalAuthMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { topicId } = req.params;
+      
+      const topic = await storage.getTopic(topicId);
+      if (!topic) {
+        return res.status(404).json({ error: "Topic not found" });
+      }
+      
+      const posts = await storage.getPostsForTopic(topicId);
+      
+      // Get user votes if authenticated
+      let userVotes = new Set<string>();
+      if (req.userId) {
+        const postIds = posts.map(p => p.id);
+        userVotes = await storage.getUserVotes(req.userId, postIds);
+      }
+      
+      // Add voted flag to each post
+      const postsWithVoteStatus = posts.map(post => ({
+        ...post,
+        userVoted: userVotes.has(post.id),
+      }));
+      
+      res.json({
+        topic,
+        posts: postsWithVoteStatus,
+      });
+    } catch (error) {
+      console.error("Get topic error:", error);
+      res.status(500).json({ error: "Failed to get topic" });
+    }
+  });
+
+  // Create a post (or reply)
+  app.post("/api/topics/:topicId/posts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { topicId } = req.params;
+      const parsed = createPostSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid post data" });
+      }
+      
+      // Verify topic exists
+      const topic = await storage.getTopic(topicId);
+      if (!topic) {
+        return res.status(404).json({ error: "Topic not found" });
+      }
+      
+      // Calculate depth for threaded replies
+      let depth = 0;
+      if (parsed.data.parentPostId) {
+        const posts = await storage.getPostsForTopic(topicId);
+        const parentPost = posts.find(p => p.id === parsed.data.parentPostId);
+        if (parentPost) {
+          depth = parentPost.depth + 1;
+        }
+      }
+      
+      const post = await storage.createPost({
+        topicId,
+        authorId: req.userId!,
+        body: parsed.data.body,
+        parentPostId: parsed.data.parentPostId || null,
+        depth,
+      });
+      
+      // Get author name for response
+      const user = await storage.getUser(req.userId!);
+      
+      res.json({
+        ...post,
+        authorName: user?.displayName || 'Unknown',
+        voteCount: 0,
+        userVoted: false,
+      });
+    } catch (error) {
+      console.error("Create post error:", error);
+      res.status(500).json({ error: "Failed to create post" });
+    }
+  });
+
+  // Toggle vote on a post
+  app.post("/api/posts/:postId/vote", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { postId } = req.params;
+      const result = await storage.toggleVote(postId, req.userId!);
+      res.json(result);
+    } catch (error) {
+      console.error("Vote error:", error);
+      res.status(500).json({ error: "Failed to vote" });
+    }
+  });
+
+  // Get active user count (presence)
+  app.get("/api/presence", async (req: Request, res: Response) => {
+    try {
+      const tmdbId = parseInt(req.query.tmdbId as string) || 0;
+      const count = await storage.getActiveUserCount(tmdbId);
+      res.json({ count });
+    } catch (error) {
+      console.error("Presence error:", error);
+      res.status(500).json({ error: "Failed to get presence" });
     }
   });
 
