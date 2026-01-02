@@ -124,6 +124,22 @@ export async function getMovieDetails(type: string, id: string): Promise<MovieDe
   return response.json();
 }
 
+export async function generateInsights(type: string, id: string, title: string, synopsis?: string): Promise<HiddenDetail[]> {
+  const response = await fetch(`/api/title/${type}/${id}/insights`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ title, synopsis }),
+  });
+  if (!response.ok) {
+    const errData = await response.json();
+    throw new Error(errData.error || 'Failed to generate insights');
+  }
+  return response.json();
+}
+
 // Auth API
 export async function requestLogin(email: string): Promise<LoginRequestResponse> {
   const response = await fetch('/api/auth/request-login', {

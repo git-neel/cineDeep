@@ -1,6 +1,6 @@
 import { useRoute, useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { getMovieDetails, type MovieDetail } from "@/lib/api";
+import { getMovieDetails, generateInsights, type MovieDetail, type HiddenDetail } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -18,6 +18,7 @@ export default function MovieDetailPage() {
   const { user, isAuthenticated, logout } = useAuth();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generatingInsights, setGeneratingInsights] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
@@ -27,6 +28,20 @@ export default function MovieDetailPage() {
         .then((data) => {
           setMovie(data);
           setLoading(false);
+          
+          // Auto-generate insights if not cached
+          if (!data.deepDive || data.deepDive.length === 0) {
+            setGeneratingInsights(true);
+            generateInsights(type, id, data.title, data.synopsis)
+              .then((insights) => {
+                setMovie((prev) => prev ? { ...prev, deepDive: insights } : null);
+                setGeneratingInsights(false);
+              })
+              .catch((error) => {
+                console.error("Failed to generate insights:", error);
+                setGeneratingInsights(false);
+              });
+          }
         })
         .catch((error) => {
           console.error("Failed to load movie:", error);
@@ -276,12 +291,38 @@ export default function MovieDetailPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : generatingInsights ? (
             <div className="text-center py-12 px-6 border border-dashed border-white/10 rounded-2xl">
               <Loader2 className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4 animate-spin" />
               <p className="text-lg text-muted-foreground">
                 Analyzing hidden meanings and Easter eggs...
               </p>
+            </div>
+          ) : (
+            <div className="text-center py-12 px-6 border border-dashed border-white/10 rounded-2xl">
+              <p className="text-lg text-muted-foreground mb-4">
+                No insights available at this moment
+              </p>
+              <Button 
+                onClick={() => {
+                  if (movie) {
+                    setGeneratingInsights(true);
+                    generateInsights(type!, id!, movie.title, movie.synopsis)
+                      .then((insights) => {
+                        setMovie((prev) => prev ? { ...prev, deepDive: insights } : null);
+                        setGeneratingInsights(false);
+                      })
+                      .catch((error) => {
+                        console.error("Failed to generate insights:", error);
+                        setGeneratingInsights(false);
+                      });
+                  }
+                }}
+                variant="outline"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate Insights
+              </Button>
             </div>
           )}
         </section>
