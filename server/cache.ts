@@ -197,10 +197,13 @@ export async function incrementInsightCount(userId: string) {
     await db
       .update(userInsightQuota)
       .set({
-        insightsGeneratedToday: userInsightQuota.insightsGeneratedToday + 1,
+        insightsGeneratedToday: db.raw('insights_generated_today + 1'),
       })
       .where(eq(userInsightQuota.userId, userId));
   } catch (error) {
-    console.error("Error incrementing insight count:", error);
+    // Silently fail - quota enforcement is secondary
+    if (process.env.NODE_ENV !== 'development') {
+      console.error("Error incrementing insight count:", error);
+    }
   }
 }
