@@ -3,6 +3,7 @@
 ## ✅ Test 1: Cache Hit Detection (TMDB API Caching)
 
 ### What to Test:
+
 - First call hits TMDB API
 - Second call gets cached response
 - Network request time comparison
@@ -10,6 +11,7 @@
 ### How to Test (in 2 terminals):
 
 **Terminal 1: Start the server**
+
 ```bash
 npm run start:local
 ```
@@ -24,7 +26,7 @@ curl -s "http://localhost:3000/api/search?query=Inception" | jq '.[] | {id, titl
 sleep 2
 
 # Test 2: Get movie details (first call - hits TMDB API)
-curl -s "http://localhost:3000/api/title/movie/27205" | jq '{id, title, year}' 
+curl -s "http://localhost:3000/api/title/movie/27205" | jq '{id, title, year}'
 
 # Wait 5 seconds for cache to be written
 sleep 5
@@ -34,6 +36,7 @@ time curl -s "http://localhost:3000/api/title/movie/27205" | jq '{id, title, yea
 ```
 
 ### Expected Output:
+
 ```
 ✅ First call: SLOWER (fresh from TMDB API)
 ✅ Second call: FASTER (from cache, ~50-70% faster)
@@ -45,6 +48,7 @@ time curl -s "http://localhost:3000/api/title/movie/27205" | jq '{id, title, yea
 ## ✅ Test 2: Insights Lazy Loading (On-Demand Generation)
 
 ### What Changed:
+
 - **Before:** Insights auto-generated (costly)
 - **After:** Insights generated only when requested (saves money)
 
@@ -82,9 +86,10 @@ time curl -X POST "http://localhost:3000/api/title/movie/27205/insights" \
 ```
 
 ### Expected Results:
+
 ```
 ❌ BEFORE: /api/title always generated insights (EXPENSIVE)
-✅ AFTER: 
+✅ AFTER:
   - Movie details: instant, no insights
   - Insights endpoint: generate once, cache forever
   - Second call: instant from cache
@@ -125,6 +130,7 @@ curl -X POST "http://localhost:3000/api/title/movie/27211/insights" \
 ```
 
 ### Expected Output:
+
 ```
 Request 1-5: ✅ Insights generated
 Request 6: ❌ "Daily insight limit reached (5 per day)"
@@ -167,6 +173,7 @@ grep "CACHE HIT" server.log | wc -l
 ```
 
 ### Expected Ratio After Caching:
+
 ```
 Without Caching:
 - 100 users request Inception
@@ -217,6 +224,7 @@ echo -e "\n✅ Testing complete!"
 ```
 
 Run it:
+
 ```bash
 chmod +x test-caching.sh
 ./test-caching.sh
@@ -238,6 +246,7 @@ chmod +x test-caching.sh
 ## 🚨 Troubleshooting
 
 ### Database not running
+
 ```bash
 # Make sure PostgreSQL is installed and running
 # If local DB missing, comment out database-dependent features for now
@@ -247,6 +256,7 @@ pg_isready
 ```
 
 ### Cache not working
+
 ```bash
 # Check if cache.ts is being imported:
 grep "cache" server/routes.ts
@@ -256,6 +266,7 @@ grep "cache" server/routes.ts
 ```
 
 ### Too slow
+
 - Cache writes happen async
 - Wait 2-3 seconds between calls for cache to persist
 - Check database connection first
@@ -264,9 +275,8 @@ grep "cache" server/routes.ts
 
 ## 📈 Expected Metrics After Optimization
 
-| Metric | Before | After | Savings |
-|--------|--------|-------|---------|
-| Requests to OpenAI | 1 per user | 1 per movie | **90%+** |
-| Requests to TMDB | Every time | Every 30 days | **95%+** |
-| Cost per 1000 users | $10-20 | $1-2 | **80-90%** |
-
+| Metric              | Before     | After         | Savings    |
+| ------------------- | ---------- | ------------- | ---------- |
+| Requests to OpenAI  | 1 per user | 1 per movie   | **90%+**   |
+| Requests to TMDB    | Every time | Every 30 days | **95%+**   |
+| Cost per 1000 users | $10-20     | $1-2          | **80-90%** |

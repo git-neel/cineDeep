@@ -24,7 +24,12 @@ export async function getTMDBFromCache(tmdbId: number, mediaType: string) {
       return JSON.parse(cached[0].data);
     }
   } catch (error) {
-    console.error("Cache read error:", error);
+    // Database may not be running in development - cache gracefully degrades
+    if (process.env.NODE_ENV === 'development') {
+      // Silent fail in development
+    } else {
+      console.error("Cache read error:", error);
+    }
   }
   return null;
 }
@@ -55,7 +60,10 @@ export async function cacheTMDBData(tmdbId: number, mediaType: string, data: any
 
     console.log(`[CACHED] TMDB ${mediaType}/${tmdbId}`);
   } catch (error) {
-    console.error("Cache write error:", error);
+    // Database may not be running in development - cache gracefully degrades
+    if (process.env.NODE_ENV !== 'development') {
+      console.error("Cache write error:", error);
+    }
   }
 }
 
@@ -81,7 +89,10 @@ export async function getInsightsFromCache(tmdbId: number, mediaType: string) {
       return JSON.parse(cached[0].insights);
     }
   } catch (error) {
-    console.error("Cache read error:", error);
+    // Database may not be running in development - cache gracefully degrades
+    if (process.env.NODE_ENV !== 'development') {
+      console.error("Cache read error:", error);
+    }
   }
   return null;
 }
@@ -120,7 +131,10 @@ export async function cacheInsights(
 
     console.log(`[CACHED] Insights ${mediaType}/${tmdbId}`);
   } catch (error) {
-    console.error("Cache write error:", error);
+    // Database may not be running in development - cache gracefully degrades
+    if (process.env.NODE_ENV !== 'development') {
+      console.error("Cache write error:", error);
+    }
   }
 }
 
@@ -167,7 +181,10 @@ export async function checkInsightQuota(userId: string): Promise<boolean> {
     // Check if user has remaining quota
     return insightsGeneratedToday < dailyLimit;
   } catch (error) {
-    console.error("Quota check error:", error);
+    // Database may not be running in development - cache gracefully degrades
+    if (process.env.NODE_ENV !== 'development') {
+      console.error("Quota check error:", error);
+    }
     return true; // Allow on error (fail open)
   }
 }
