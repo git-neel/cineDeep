@@ -3,6 +3,14 @@ import type { Server } from "http";
 import OpenAI from "openai";
 import { storage } from "./storage";
 import { z } from "zod";
+import {
+  getTMDBFromCache,
+  cacheTMDBData,
+  getInsightsFromCache,
+  cacheInsights,
+  checkInsightQuota,
+  incrementInsightCount,
+} from "./cache";
 
 // Support both Replit AI Integrations and standard OpenAI API
 const openai = new OpenAI({
@@ -225,12 +233,35 @@ Return ONLY valid JSON.`;
 }
 
 async function fetchFromTMDB(endpoint: string) {
+  // For specific movie/tv details, try cache first
+  if (endpoint.includes('/movie/') || endpoint.includes('/tv/')) {
+    const match = endpoint.match(/\/(movie|tv)\/(\d+)/);
+    if (match) {
+      const [, type, id] = match;
+      const cached = await getTMDBFromCache(parseInt(id), type);
+      if (cached) return cached;
+    }
+  }
+
+  // Fetch from TMDB API
   const url = `${TMDB_BASE_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${TMDB_API_KEY}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`TMDB API error: ${response.statusText}`);
   }
-  return response.json();
+  
+  const data = await response.json();
+
+  // Cache movie/tv details
+  if (endpoint.includes('/movie/') || endpoint.includes('/tv/')) {
+    const match = endpoint.match(/\/(movie|tv)\/(\d+)/);
+    if (match) {
+      const [, type, id] = match;
+      await cacheTMDBData(parseInt(id), type, data);
+    }
+  }
+
+  return data;
 }
 
 function getImageUrl(path: string | null, size: 'w500' | 'original' = 'w500'): string {
@@ -316,11 +347,9 @@ export async function registerRoutes(
       const revenue = details.revenue || 0;
       const titleName = details.title || details.name || '';
       
-      // Generate AI insights in parallel
-      const insightsPromise = generateInsightsForTitle(titleName, details.overview);
-
-      const insights = await insightsPromise;
-
+      // Check if insights are cached - don't auto-generate
+      const cachedInsights = await getInsightsFromCache(details.id, mediaType);
+      
       const result = {
         id: details.id.toString(),
         title: titleName,
@@ -339,7 +368,8 @@ export async function registerRoutes(
           boxOffice: revenue > 0 ? `$${(revenue / 1_000_000).toFixed(1)}M` : 'N/A',
           verdict: determineVerdict(budget, revenue),
         },
-        deepDive: insights,
+        deepDive: cachedInsights || [], // Return cached or empty array
+        insightsAvailable: !!cachedInsights, // Flag to indicate if insights exist
       };
 
       res.json(result);
@@ -349,44 +379,72 @@ export async function registerRoutes(
     }
   });
 
-  // Generate AI insights for a movie/show
-  app.post("/api/title/:type/:id/insights", async (req: Request, res: Response) => {
+  // Generate AI insights for a movie/show (on-demand, cached, rate-limited)
+  app.post("/api/title/:type/:id/insights", optionalAuthMiddleware, async (req: Request, res: Response) => {
     try {
       const { type, id } = req.params;
       const { title, synopsis } = req.body;
+      const userId = req.userId;
 
       if (!title) {
         return res.status(400).json({ error: "Title is required" });
       }
 
-      const prompt = `You are a film critic and cultural analyst. Analyze "${title}" and provide deep insights.
+      const mediaType = type === 'movie' ? 'movie' : 'tv';
+      const tmdbId = parseInt(id);
 
-Return a JSON object with an "insights" array containing 3-5 insights with this exact structure:
+      // Check cache first
+      const cachedInsights = await getInsightsFromCache(tmdbId, mediaType);
+      if (cachedInsights) {
+        console.log(`✅ Using cached insights for ${mediaType}/${id}`);
+        return res.json(cachedInsights);
+      }
+
+      // Check rate limit if user is logged in
+      if (userId) {
+        const hasQuota = await checkInsightQuota(userId);
+        if (!hasQuota) {
+          return res.status(429).json({
+            error: "Daily insight limit reached (5 per day). Try again tomorrow!",
+          });
+        }
+      }
+
+      // Optimized prompt to reduce tokens
+      const prompt = `Analyze "${title}" and provide 4 insights. Return ONLY this JSON:
 {
   "insights": [
     {
-      "type": "dialogue" | "metaphor" | "easter-egg",
-      "title": "Brief title of the insight (e.g., a memorable quote or symbolic element)",
-      "description": "2-3 sentences explaining the deeper meaning, symbolism, or hidden detail"
+      "type": "dialogue",
+      "title": "A memorable quote",
+      "description": "Why it matters (2-3 sentences)"
+    },
+    {
+      "type": "metaphor",
+      "title": "A visual or thematic metaphor",
+      "description": "Its symbolic meaning (2-3 sentences)"
+    },
+    {
+      "type": "easter-egg",
+      "title": "A hidden detail",
+      "description": "Why it's significant (2-3 sentences)"
+    },
+    {
+      "type": "metaphor",
+      "title": "Another symbolic element",
+      "description": "Its cultural significance (2-3 sentences)"
     }
   ]
 }
 
-Focus on:
-- Memorable dialogues and their thematic significance
-- Visual metaphors and symbolic elements
-- Hidden meanings and Easter eggs
-- Cultural or philosophical subtext
+${synopsis ? `Summary: ${synopsis.substring(0, 200)}` : ''}`;
 
-${synopsis ? `Synopsis: ${synopsis}` : ''}
-
-Return ONLY valid JSON, no other text.`;
-
+      console.log(`🔄 Generating insights for ${mediaType}/${id}...`);
       const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
+        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
-        max_completion_tokens: 1000,
+        max_completion_tokens: 800, // Reduced from 1000
       });
 
       const content = response.choices[0]?.message?.content;
@@ -410,6 +468,15 @@ Return ONLY valid JSON, no other text.`;
         description: insight.description || '',
       }));
 
+      // Cache the insights
+      await cacheInsights(tmdbId, mediaType, title, synopsis, insightsWithIds);
+
+      // Increment user's insight count if logged in
+      if (userId) {
+        await incrementInsightCount(userId);
+      }
+
+      console.log(`✅ Generated and cached insights for ${mediaType}/${id}`);
       res.json(insightsWithIds);
     } catch (error) {
       console.error("Insights generation error:", error);

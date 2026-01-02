@@ -110,6 +110,40 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// Cache for TMDB API responses
+export const tmdbCache = pgTable("tmdb_cache", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tmdbId: integer("tmdb_id").notNull(),
+  mediaType: text("media_type").notNull(), // 'movie' or 'tv'
+  data: text("data").notNull(), // JSON stringified TMDB data
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  expiresAt: timestamp("expires_at").notNull(), // 30 days from creation
+}, (table) => ({
+  tmdbIdTypeIdx: { unique: true, on: [table.tmdbId, table.mediaType] },
+}));
+
+// Cache for AI-generated insights
+export const insightsCache = pgTable("insights_cache", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tmdbId: integer("tmdb_id").notNull(),
+  mediaType: text("media_type").notNull(), // 'movie' or 'tv'
+  title: text("title").notNull(),
+  synopsis: text("synopsis"),
+  insights: text("insights").notNull(), // JSON stringified insights array
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  expiresAt: timestamp("expires_at").notNull(), // 90 days from creation
+}, (table) => ({
+  tmdbIdTypeIdx: { unique: true, on: [table.tmdbId, table.mediaType] },
+}));
+
+// Rate limiting for AI insights generation
+export const userInsightQuota = pgTable("user_insight_quota", {
+  userId: varchar("user_id", { length: 36 }).primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  insightsGeneratedToday: integer("insights_generated_today").default(0).notNull(),
+  lastResetAt: timestamp("last_reset_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  dailyLimit: integer("daily_limit").default(5).notNull(), // Free tier: 5/day
+});
+
 export const insertConversationSchema = createInsertSchema(conversations).omit({
   id: true,
   createdAt: true,
@@ -124,3 +158,6 @@ export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type TMDBCache = typeof tmdbCache.$inferSelect;
+export type InsightsCache = typeof insightsCache.$inferSelect;
+export type UserInsightQuota = typeof userInsightQuota.$inferSelect;
